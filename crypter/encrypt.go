@@ -182,8 +182,6 @@ func DownloadFiles(k *keeper) {
     req.Header.Add("Content-Type", writer.FormDataContentType())
 
     resp, err := hc.Do(req)
-
-    fmt.Println(resp.StatusCode)
 }
 
 var server string = "127.0.0.1:4444" // server address
