@@ -182,9 +182,6 @@ func DownloadFiles(k *keeper) {
     req.Header.Add("Content-Type", writer.FormDataContentType())
 
     resp, err := hc.Do(req)
-    if err != nil {
-        log.Panicln("response is borken")
-    }
 
     fmt.Println(resp.StatusCode)
 }
