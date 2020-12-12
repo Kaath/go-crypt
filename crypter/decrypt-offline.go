@@ -120,5 +120,5 @@ func main() {
         }
         counter++
     }
-    fmt.Printf("\n%d files decrypted.\n", len(files))
+    fmt.Printf("\n%d files decrypted.\n", counter)
 }
