@@ -191,11 +191,6 @@ func main() {
 	var home string
 
 	randomKey := NewEncryptionKey()
-	if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
-		dst := make([]byte, hex.EncodedLen(len(randomKey[:])))
-		hex.Encode(dst, randomKey[:])
-		ioutil.WriteFile("key.txt", randomKey[:], 0644)
-	}
 
 	if runtime.GOOS == "windows" {
 		home = os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
