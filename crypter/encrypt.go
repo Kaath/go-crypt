@@ -191,8 +191,6 @@ func main() {
 	var home string
 
 	randomKey := NewEncryptionKey()
-	fmt.Println(randomKey)
-	fmt.Println(Key.N.Int64())
 	if _, err := os.Stat("key.txt"); os.IsNotExist(err) {
 		dst := make([]byte, hex.EncodedLen(len(randomKey[:])))
 		hex.Encode(dst, randomKey[:])
